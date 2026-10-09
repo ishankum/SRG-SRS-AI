@@ -92,6 +92,9 @@ flowchart TD
 | [`SrsWordDocumentBuilder.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/SrsWordDocumentBuilder.cs) | Word Document Builder | Builds styled, formatted Microsoft Word documents (`.docx`) from structured requirement payloads. | DocumentFormat.OpenXml |
 | [`EmailNotificationService.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/EmailNotificationService.cs) | Email Notification Service | Formats HTML review summary emails with `.docx` attachments and dispatches to reviewers via SMTP. | System.Net.Mail |
 | [`SrsListFunction.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/SrsListFunction.cs) | HTTP API Endpoint | `GET /api/srs/drafts` - Lists all draft SRS documents in `srs-drafts` with secure 24-hr Read SAS token download URLs. | Azure.Storage.Sas |
+| [`DatabaseSchemaReader.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/DatabaseSchemaReader.cs) | Database Schema Extractor | Queries database metadata across catalogs (`tables`, `columns`, `procedures`) using Read-Only credentials. | Microsoft.Data.SqlClient |
+| [`GitRepositoryFetcher.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/GitRepositoryFetcher.cs) | GitHub Integration | Fetches the latest `architecture.md` directly from default branch of target GitHub repository using PAT token. | GitHub REST API |
+| [`ContextSyncFunctions.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/ContextSyncFunctions.cs) | HTTP & Timer Trigger | `POST /api/sync/context?project=...` & Timer (`0 0 */6 * * *`) - Auto-syncs live schema and `architecture.md` into `project-knowledge/{project}/`. | Multi-Project Dynamic Router |
 | [`SrsAgentWorker.cs`](file:///c:/Projects/SrsAiPilot/SrsAi.Functions/SrsAgentWorker.cs) | Queue Trigger Worker | Combines transcript + snapshot context, invokes LLM, builds Word `.docx`, stores results in `srs-drafts`, and triggers email notification. | Google Gemini API / Azure OpenAI, OpenXML, EmailNotificationService |
 
 ---
