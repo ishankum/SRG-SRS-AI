@@ -36,18 +36,60 @@ namespace SrsAi.Functions
         {
             _logger.LogInformation("Received HTTP request to sync project database schema and architecture context.");
 
-            // Extract project query parameter or default to RSCS
-            string projectName = "RSCS";
             var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-            if (!string.IsNullOrWhiteSpace(query["project"]))
+            string projectParam = query["project"]?.Trim() ?? "";
+
+            var targetProjects = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(projectParam) && !projectParam.Equals("ALL", StringComparison.OrdinalIgnoreCase))
             {
-                projectName = query["project"]!.Trim().ToUpper();
+                var specified = projectParam.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in specified)
+                {
+                    targetProjects.Add(p.Trim().ToUpper());
+                }
+            }
+            else
+            {
+                // Sync all active projects configured in ActiveProjects
+                string activeProjectsStr = _configuration["ActiveProjects"] ?? "RSCS,CBRE";
+                var activeProjects = activeProjectsStr.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in activeProjects)
+                {
+                    targetProjects.Add(p.Trim().ToUpper());
+                }
             }
 
-            var syncResult = await SyncProjectContextAsync(projectName);
+            if (targetProjects.Count == 0)
+            {
+                targetProjects.Add("RSCS");
+            }
 
-            var response = req.CreateResponse(syncResult.Success ? HttpStatusCode.OK : HttpStatusCode.InternalServerError);
-            await response.WriteAsJsonAsync(syncResult);
+            var results = new List<SyncResult>();
+            foreach (var projectName in targetProjects)
+            {
+                _logger.LogInformation($"Starting context sync for project: {projectName}");
+                var result = await SyncProjectContextAsync(projectName);
+                results.Add(result);
+            }
+
+            bool allSuccessful = results.TrueForAll(r => r.Success);
+            var response = req.CreateResponse(allSuccessful ? HttpStatusCode.OK : HttpStatusCode.MultiStatus);
+
+            if (results.Count == 1 && !string.IsNullOrWhiteSpace(projectParam) && !projectParam.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                await response.WriteAsJsonAsync(results[0]);
+            }
+            else
+            {
+                await response.WriteAsJsonAsync(new
+                {
+                    Success = allSuccessful,
+                    TotalProjects = results.Count,
+                    SyncedProjects = results
+                });
+            }
+
             return response;
         }
 
@@ -110,10 +152,22 @@ namespace SrsAi.Functions
                 // 2. Resolve Git Repository and PAT Token for Target Project
                 string gitRepo = _configuration[$"GitRepo_{projectName}"] ?? _configuration["GitRepoBaseUrl"] ?? "";
                 string patToken = _configuration["GitPersonalAccessToken"] ?? "";
+                string branch = _configuration[$"GitBranch_{projectName}"] ?? _configuration["GitBranch"] ?? "main";
+                string archFilePath = _configuration[$"GitArchitectureFilePath_{projectName}"] 
+                    ?? _configuration["GitArchitectureFilePath"] 
+                    ?? "Azmbl_StudioRG/Azmbl_StudioRG/Content/architecture.md";
 
                 if (!string.IsNullOrWhiteSpace(gitRepo))
                 {
-                    string? markdownContent = await _gitFetcher.FetchArchitectureMarkdownAsync(gitRepo, patToken, "architecture.md");
+                    string? markdownContent = await _gitFetcher.FetchArchitectureMarkdownAsync(gitRepo, patToken, archFilePath, branch);
+
+                    // Fallback to repository root "architecture.md" if custom path is not found
+                    if (string.IsNullOrWhiteSpace(markdownContent) && archFilePath != "architecture.md")
+                    {
+                        _logger.LogInformation($"Architecture file not found at '{archFilePath}'. Attempting fallback to 'architecture.md'...");
+                        markdownContent = await _gitFetcher.FetchArchitectureMarkdownAsync(gitRepo, patToken, "architecture.md", branch);
+                    }
+
                     if (!string.IsNullOrWhiteSpace(markdownContent))
                     {
                         string archBlobPath = $"{projectName.ToLower()}/architecture.md";
