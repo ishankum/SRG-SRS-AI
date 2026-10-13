@@ -197,5 +197,91 @@ namespace SrsAi.Functions
 
             return sb.ToString();
         }
+
+        public async Task SendSrsApprovedEmailAsync(string meetingId, string projectName, string approverName, string jsonPayload, byte[] docxBytes, string docxFileName)
+        {
+            string reviewerEmailsStr = _configuration["ReviewerEmails"] ?? "";
+            string smtpHost = _configuration["SmtpHost"] ?? "";
+
+            if (string.IsNullOrWhiteSpace(reviewerEmailsStr) || string.IsNullOrWhiteSpace(smtpHost))
+            {
+                _logger.LogWarning("Email settings not configured. Skipping SRS approval notification email.");
+                return;
+            }
+
+            try
+            {
+                string senderEmail = _configuration["SenderEmail"] ?? _configuration["SmtpUsername"] ?? "noreply@srs-ai.com";
+                int smtpPort = int.TryParse(_configuration["SmtpPort"], out int port) ? port : 587;
+                string smtpUsername = _configuration["SmtpUsername"] ?? "";
+                string smtpPassword = _configuration["SmtpPassword"] ?? "";
+                bool enableSsl = bool.TryParse(_configuration["EnableSsl"], out bool ssl) ? ssl : true;
+
+                using MailMessage message = new MailMessage();
+                message.From = new MailAddress(senderEmail, "SRS AI Automation Agent");
+
+                string[] emails = reviewerEmailsStr.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (string email in emails)
+                {
+                    string trimmed = email.Trim();
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        message.To.Add(trimmed);
+                    }
+                }
+
+                if (message.To.Count == 0) return;
+
+                message.Subject = $"[SRS APPROVED] Project: {projectName} - Meeting: {meetingId}";
+                message.IsBodyHtml = true;
+                message.Body = BuildHtmlApprovedEmailBody(projectName, meetingId, approverName, jsonPayload);
+
+                if (docxBytes != null && docxBytes.Length > 0)
+                {
+                    using MemoryStream attachmentStream = new MemoryStream(docxBytes);
+                    Attachment attachment = new Attachment(
+                        attachmentStream,
+                        docxFileName,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    );
+                    message.Attachments.Add(attachment);
+
+                    await SendEmailWithSmtpAsync(smtpHost, smtpPort, smtpUsername, smtpPassword, enableSsl, message);
+                }
+                else
+                {
+                    await SendEmailWithSmtpAsync(smtpHost, smtpPort, smtpUsername, smtpPassword, enableSsl, message);
+                }
+
+                _logger.LogInformation($"Successfully dispatched SRS approved notification email to {reviewerEmailsStr} for meeting {meetingId}.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Failed to dispatch SRS approved email notification: {ex.Message}");
+            }
+        }
+
+        private static string BuildHtmlApprovedEmailBody(string project, string meetingId, string approverName, string jsonPayload)
+        {
+            var sb = new StringBuilder();
+            sb.Append(@"
+<html>
+<body style='font-family: Arial, sans-serif; color: #333333; line-height: 1.6; max-width: 650px; margin: 0 auto; padding: 20px;'>
+    <div style='background-color: #2E75B6; color: #ffffff; padding: 15px 20px; border-radius: 6px 6px 0 0;'>
+        <h2 style='margin: 0; font-size: 20px;'>SRS Document Officially Approved</h2>
+        <p style='margin: 5px 0 0 0; font-size: 13px; color: #D9E1F2;'>Finalized & Ready for Development</p>
+    </div>
+    <div style='border: 1px solid #D9D9D9; border-top: none; padding: 20px; border-radius: 0 0 6px 6px; background-color: #FAFAFA;'>
+        <div style='background-color: #E2EFDA; border-left: 4px solid #385723; padding: 12px; margin-bottom: 20px;'>
+            <p style='margin: 0; color: #385723; font-weight: bold;'>Status: Approved & Locked</p>
+            <p style='margin: 5px 0 0 0; font-size: 13px;'>Project: <strong>").Append(WebUtility.HtmlEncode(project)).Append(@"</strong> | Meeting: ").Append(WebUtility.HtmlEncode(meetingId)).Append(@"</p>
+            <p style='margin: 5px 0 0 0; font-size: 13px;'>Approved By: <strong>").Append(WebUtility.HtmlEncode(approverName)).Append(@"</strong> at ").Append(DateTime.UtcNow.ToString("u")).Append(@"</p>
+        </div>
+        <p>The Software Requirements Specification (SRS) for <strong>").Append(WebUtility.HtmlEncode(project)).Append(@"</strong> has received official human review and sign-off. The final approved Word document (<code>.docx</code>) is attached to this email and persisted in the <code>srs-approved</code> Azure Blob Storage container.</p>
+    </div>
+</body>
+</html>");
+            return sb.ToString();
+        }
     }
 }
