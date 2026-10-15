@@ -58,6 +58,23 @@ namespace SrsAi.Functions
 
                 if (isParsed)
                 {
+                    string execSummary = "";
+                    if (root.TryGetProperty("executiveSummary", out var esElem))
+                    {
+                        execSummary = esElem.GetString() ?? "";
+                    }
+                    else if (root.TryGetProperty("overview", out var ovElem))
+                    {
+                        execSummary = ovElem.GetString() ?? "";
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(execSummary))
+                    {
+                        AddHeading1(body, "Executive Summary");
+                        AddCalloutBox(body, "Overview", execSummary);
+                        AddSpacing(body);
+                    }
+
                     // Section 1: Extracted Functional Requirements
                     AddHeading1(body, "1. Functional Requirements & System Impact Analysis");
 
