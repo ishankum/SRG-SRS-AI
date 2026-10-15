@@ -104,7 +104,14 @@ namespace SrsAi.Functions
                 byte[] docxBytes = SrsWordDocumentBuilder.BuildWordDocument(jsonPayload, meetingId);
 
                 var docxClient = draftContainer.GetBlobClient(docxBlobName);
-                await docxClient.UploadAsync(new BinaryData(docxBytes), overwrite: true);
+                var docxOptions = new Azure.Storage.Blobs.Models.BlobUploadOptions
+                {
+                    HttpHeaders = new Azure.Storage.Blobs.Models.BlobHttpHeaders
+                    {
+                        ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    }
+                };
+                await docxClient.UploadAsync(BinaryData.FromBytes(docxBytes), docxOptions);
 
                 _logger.LogInformation($"Successfully saved draft updates to '{jsonBlobName}' and '{docxBlobName}' by {approverName}.");
 
@@ -221,7 +228,14 @@ namespace SrsAi.Functions
             await appJsonClient.UploadAsync(BinaryData.FromString(jsonPayload), overwrite: true);
 
             var appDocxClient = approvedContainer.GetBlobClient(approvedDocxName);
-            await appDocxClient.UploadAsync(new BinaryData(docxBytes), overwrite: true);
+            var docxOptions = new Azure.Storage.Blobs.Models.BlobUploadOptions
+            {
+                HttpHeaders = new Azure.Storage.Blobs.Models.BlobHttpHeaders
+                {
+                    ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                }
+            };
+            await appDocxClient.UploadAsync(BinaryData.FromBytes(docxBytes), docxOptions);
 
             // 2. Generate SAS link for the approved document
             string finalDocxSasUrl = GenerateReadSasUri(appDocxClient);
@@ -295,12 +309,16 @@ namespace SrsAi.Functions
 
         private static string ExtractMeetingId(string blobName)
         {
-            // Format: srs-draft-{meetingId}-{timestamp}.json
             string name = Path.GetFileNameWithoutExtension(blobName);
-            var parts = name.Split('-');
-            if (parts.Length >= 3 && parts[0] == "srs" && parts[1] == "draft")
+            if (name.StartsWith("srs-draft-", StringComparison.OrdinalIgnoreCase))
             {
-                return parts[2];
+                string withoutPrefix = name.Substring("srs-draft-".Length);
+                int lastHyphen = withoutPrefix.LastIndexOf('-');
+                if (lastHyphen > 0)
+                {
+                    return withoutPrefix.Substring(0, lastHyphen);
+                }
+                return withoutPrefix;
             }
             return name;
         }
@@ -336,11 +354,14 @@ namespace SrsAi.Functions
     <style>
         :root {{
             --primary: #1F4E78;
+            --primary-light: #2E75B6;
             --success: #107C41;
+            --danger: #C53030;
             --bg: #F4F6F9;
             --card-bg: #FFFFFF;
             --text: #2D3748;
-            --border: #E2E8F0;
+            --border: #CBD5E0;
+            --subtle: #718096;
         }}
         * {{ box-sizing: border-box; }}
         body {{
@@ -349,18 +370,20 @@ namespace SrsAi.Functions
             color: var(--text);
             margin: 0;
             padding: 24px;
+            line-height: 1.5;
         }}
         .container {{
-            max-width: 1000px;
+            max-width: 1050px;
             margin: 0 auto;
+            padding-bottom: 90px;
         }}
         .header {{
             background: linear-gradient(135deg, #1F4E78, #2E75B6);
             color: white;
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            margin-bottom: 24px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+            margin-bottom: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -369,29 +392,38 @@ namespace SrsAi.Functions
         .header p {{ margin: 6px 0 0 0; opacity: 0.9; font-size: 14px; }}
         .meta-bar {{
             display: flex;
+            flex-wrap: wrap;
             gap: 16px;
             background: white;
             padding: 16px 20px;
             border-radius: 8px;
             margin-bottom: 24px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             align-items: center;
+            border: 1px solid var(--border);
         }}
         .meta-item {{ display: flex; flex-direction: column; }}
-        .meta-label {{ font-size: 11px; text-transform: uppercase; font-weight: bold; color: #718096; }}
-        .meta-val {{ font-size: 14px; font-weight: 600; color: #2D3748; }}
-        select, input[type=""text""] {{
-            padding: 8px 12px;
+        .meta-label {{ font-size: 11px; text-transform: uppercase; font-weight: bold; color: var(--subtle); margin-bottom: 4px; }}
+        .meta-val {{ font-size: 13px; font-weight: 600; color: #2D3748; }}
+        select, input[type=""text""], textarea {{
+            padding: 9px 12px;
             border: 1px solid var(--border);
             border-radius: 6px;
             font-size: 14px;
+            font-family: inherit;
+            color: var(--text);
+        }}
+        select:focus, input[type=""text""]:focus, textarea:focus {{
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(46,117,182,0.15);
         }}
         .card {{
             background: var(--card-bg);
             border-radius: 10px;
             padding: 24px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-            margin-bottom: 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+            margin-bottom: 24px;
             border: 1px solid var(--border);
         }}
         .card h2 {{
@@ -400,57 +432,96 @@ namespace SrsAi.Functions
             color: var(--primary);
             border-bottom: 2px solid #EDF2F7;
             padding-bottom: 10px;
-        }}
-        textarea {{
-            width: 100%;
-            min-height: 120px;
-            padding: 12px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 14px;
-            line-height: 1.5;
-            resize: vertical;
-        }}
-        .epic-item {{
-            background: #F8FAFC;
-            border: 1px solid #E2E8F0;
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 16px;
-        }}
-        .actions-bar {{
-            position: sticky;
-            bottom: 20px;
-            background: white;
-            padding: 16px 24px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border: 1px solid #CBD5E0;
+        }}
+        textarea {{
+            width: 100%;
+            min-height: 100px;
+            resize: vertical;
+        }}
+        .req-card {{
+            background: #F8FAFC;
+            border: 1px solid #CBD5E1;
+            border-left: 5px solid var(--primary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }}
+        .req-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }}
+        .req-badge {{
+            background: #1F4E78;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            padding: 4px 10px;
+            border-radius: 4px;
+            letter-spacing: 0.5px;
+        }}
+        .field-group {{
+            margin-bottom: 14px;
+        }}
+        .field-group label {{
+            display: block;
+            font-size: 12px;
+            font-weight: 700;
+            color: #4A5568;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+        .impact-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+            background: #EDF2F7;
+            padding: 14px;
+            border-radius: 6px;
+        }}
+        .actions-bar {{
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 16px 30px;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.12);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #CBD5E0;
+            z-index: 100;
         }}
         .btn {{
-            padding: 12px 24px;
+            padding: 11px 22px;
             border-radius: 6px;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
             border: none;
             transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }}
-        .btn-draft {{
-            background: #E2E8F0;
-            color: #2D3748;
-            margin-right: 12px;
-        }}
+        .btn-draft {{ background: #E2E8F0; color: #2D3748; margin-right: 12px; }}
         .btn-draft:hover {{ background: #CBD5E0; }}
-        .btn-approve {{
-            background: var(--success);
-            color: white;
-        }}
+        .btn-approve {{ background: var(--success); color: white; }}
         .btn-approve:hover {{ background: #0E6B37; }}
+        .btn-add {{ background: #EDF2F7; color: var(--primary); border: 1px dashed var(--primary); width: 100%; justify-content: center; padding: 12px; }}
+        .btn-add:hover {{ background: #E2E8F0; }}
+        .btn-del {{ background: #FED7D7; color: #9B2C2C; padding: 6px 12px; font-size: 12px; }}
+        .btn-del:hover {{ background: #FEB2B2; }}
         .toast {{
             display: none;
             position: fixed;
@@ -460,8 +531,10 @@ namespace SrsAi.Functions
             color: white;
             padding: 14px 24px;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.2);
             z-index: 1000;
+            font-size: 14px;
+            font-weight: 500;
         }}
     </style>
 </head>
@@ -469,16 +542,16 @@ namespace SrsAi.Functions
     <div class=""container"">
         <div class=""header"">
             <div>
-                <h1>SRS Direct Review & Editor</h1>
-                <p>Edit requirements, user stories, or database mappings directly before saving or approving.</p>
+                <h1>SRS Direct Document Editor</h1>
+                <p>Modify requirements, acceptance criteria, database mappings, or open questions directly.</p>
             </div>
-            <div id=""badgeProject"" style=""background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 6px; font-weight: bold;"">RSCS</div>
+            <div id=""badgeProject"" style=""background: rgba(255,255,255,0.25); padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 15px;"">RSCS</div>
         </div>
 
         <div class=""meta-bar"">
-            <div class=""meta-item"">
+            <div class=""meta-item"" style=""min-width: 200px;"">
                 <span class=""meta-label"">Draft File</span>
-                <span class=""meta-val"">{draftId}</span>
+                <span class=""meta-val"" style=""word-break: break-all;"">{draftId}</span>
             </div>
             <div class=""meta-item"">
                 <span class=""meta-label"">Target Project</span>
@@ -489,6 +562,10 @@ namespace SrsAi.Functions
                 </select>
             </div>
             <div class=""meta-item"" style=""flex-grow: 1;"">
+                <span class=""meta-label"">Meeting Title</span>
+                <input type=""text"" id=""meetingTitleInput"" placeholder=""Meeting Title / Topic"" />
+            </div>
+            <div class=""meta-item"" style=""min-width: 160px;"">
                 <span class=""meta-label"">Reviewer Name</span>
                 <input type=""text"" id=""reviewerInput"" value=""Lead Reviewer"" placeholder=""Your name"" />
             </div>
@@ -497,30 +574,37 @@ namespace SrsAi.Functions
         <!-- Section 1: Executive Summary -->
         <div class=""card"">
             <h2>1. Executive Summary & Overview</h2>
-            <textarea id=""execSummary""></textarea>
+            <p style=""font-size: 13px; color: var(--subtle); margin-top: -6px;"">High-level summary of the business problem, discussion context, and technical objectives.</p>
+            <textarea id=""execSummary"" style=""min-height: 120px;"" placeholder=""Enter executive summary...""></textarea>
         </div>
 
-        <!-- Section 2: Epics and User Stories -->
+        <!-- Section 2: Functional Requirements -->
         <div class=""card"">
-            <h2>2. Epics & User Stories</h2>
-            <div id=""epicsContainer""></div>
+            <h2>
+                <span>2. Functional Requirements & System Impacts</span>
+                <span id=""reqCountBadge"" style=""font-size: 13px; background: #E2E8F0; padding: 4px 10px; border-radius: 12px; color: #4A5568;"">0 Requirements</span>
+            </h2>
+            <div id=""requirementsContainer""></div>
+            <button class=""btn btn-add"" onclick=""addRequirement()"">➕ Add New Requirement Card</button>
         </div>
 
-        <!-- Section 3: Database & Schema Mappings -->
+        <!-- Section 3: Open Questions -->
         <div class=""card"">
-            <h2>3. Database Schema Mappings</h2>
-            <textarea id=""dbMappings"" style=""min-height: 140px;""></textarea>
+            <h2>3. Open Questions & Clarifications Needed</h2>
+            <p style=""font-size: 13px; color: var(--subtle); margin-top: -6px;"">Enter one open question or decision needed per line. These will be highlighted in yellow callout boxes in the Word document.</p>
+            <textarea id=""openQuestions"" style=""min-height: 110px;"" placeholder=""Enter questions (one per line)...""></textarea>
         </div>
 
-        <!-- Section 4: Non-Functional & Security Constraints -->
+        <!-- Section 4: Technical Assumptions -->
         <div class=""card"">
-            <h2>4. Non-Functional & Compliance Constraints</h2>
-            <textarea id=""nfrSummary"" style=""min-height: 100px;""></textarea>
+            <h2>4. Technical Assumptions</h2>
+            <p style=""font-size: 13px; color: var(--subtle); margin-top: -6px;"">Enter one technical assumption made during the discussion per line.</p>
+            <textarea id=""assumptions"" style=""min-height: 110px;"" placeholder=""Enter assumptions (one per line)...""></textarea>
         </div>
 
         <!-- Sticky Actions Bar -->
         <div class=""actions-bar"">
-            <span style=""color: #718096; font-size: 13px;"">Changes made here update the Word (.docx) document automatically.</span>
+            <span style=""color: #718096; font-size: 13px;"">💾 Changes update the Word (<code>.docx</code>) document and Azure storage immediately.</span>
             <div>
                 <button class=""btn btn-draft"" onclick=""saveDraft()"">💾 Save as Draft</button>
                 <button class=""btn btn-approve"" onclick=""saveAndApprove()"">✅ Save & Approve SRS</button>
@@ -531,70 +615,256 @@ namespace SrsAi.Functions
     <div id=""toast"" class=""toast""></div>
 
     <script>
-        let currentPayload = JSON.parse(`{safeJson}`);
+        let currentPayload = {{}};
+        try {{
+            currentPayload = JSON.parse(`{safeJson}`);
+        }} catch(e) {{
+            currentPayload = {{}};
+        }}
         const draftId = ""{draftId}"";
 
         function init() {{
-            document.getElementById('execSummary').value = currentPayload.executiveSummary || '';
-            document.getElementById('dbMappings').value = JSON.stringify(currentPayload.databaseMapping || [], null, 2);
-            document.getElementById('nfrSummary').value = (currentPayload.nonFunctionalRequirements || []).join('\n');
+            // Project
+            const proj = currentPayload.project || ""RSCS"";
+            document.getElementById('projectSelect').value = proj;
+            document.getElementById('badgeProject').innerText = proj;
 
-            if (currentPayload.project) {{
-                document.getElementById('projectSelect').value = currentPayload.project;
-                document.getElementById('badgeProject').innerText = currentPayload.project;
+            document.getElementById('projectSelect').addEventListener('change', function() {{
+                document.getElementById('badgeProject').innerText = this.value;
+            }});
+
+            // Meeting Title
+            document.getElementById('meetingTitleInput').value = currentPayload.meetingTitle || """";
+
+            // Executive Summary
+            document.getElementById('execSummary').value = currentPayload.executiveSummary || currentPayload.overview || """";
+
+            // Open Questions
+            const oq = currentPayload.openQuestions || [];
+            document.getElementById('openQuestions').value = Array.isArray(oq) 
+                ? oq.map(x => typeof x === 'object' && x !== null ? (x.question || JSON.stringify(x)) : String(x)).join('\n') 
+                : (oq || '');
+
+            // Assumptions
+            const assump = currentPayload.assumptions || [];
+            document.getElementById('assumptions').value = Array.isArray(assump) 
+                ? assump.map(x => typeof x === 'object' && x !== null ? (x.assumption || JSON.stringify(x)) : String(x)).join('\n') 
+                : (assump || '');
+
+            // Requirements array fallback (support requirements or epics/userStories if present)
+            if (!Array.isArray(currentPayload.requirements) || currentPayload.requirements.length === 0) {{
+                if (Array.isArray(currentPayload.epics) && currentPayload.epics.length > 0) {{
+                    currentPayload.requirements = [];
+                    let rNum = 1;
+                    currentPayload.epics.forEach((e) => {{
+                        if (Array.isArray(e.userStories) && e.userStories.length > 0) {{
+                            e.userStories.forEach((s) => {{
+                                currentPayload.requirements.push({{
+                                    id: `REQ-${{String(rNum++).padStart(3, '0')}}`,
+                                    title: s.title || `${{e.title || 'Requirement'}} - Story`,
+                                    desiredBehavior: s.description || e.description || '',
+                                    classification: 'NEW',
+                                    sourceMeeting: '',
+                                    existingSystemComparison: '',
+                                    acceptanceCriteria: s.acceptanceCriteria || [],
+                                    impacts: {{ database: '', backend: '', frontend: '', mobile: '' }}
+                                }});
+                            }});
+                        }} else {{
+                            currentPayload.requirements.push({{
+                                id: `REQ-${{String(rNum++).padStart(3, '0')}}`,
+                                title: e.title || `Requirement ${{rNum}}`,
+                                desiredBehavior: e.description || '',
+                                classification: 'NEW',
+                                sourceMeeting: '',
+                                existingSystemComparison: '',
+                                acceptanceCriteria: e.acceptanceCriteria || [],
+                                impacts: {{ database: '', backend: '', frontend: '', mobile: '' }}
+                            }});
+                        }}
+                    }});
+                }} else {{
+                    currentPayload.requirements = [];
+                }}
             }}
 
-            renderEpics();
+            renderRequirements();
         }}
 
-        function renderEpics() {{
-            const container = document.getElementById('epicsContainer');
+        function renderRequirements() {{
+            const container = document.getElementById('requirementsContainer');
             container.innerHTML = '';
-            const epics = currentPayload.epics || [];
+            const reqs = currentPayload.requirements || [];
+            document.getElementById('reqCountBadge').innerText = `${{reqs.length}} Requirement${{reqs.length === 1 ? '' : 's'}}`;
 
-            epics.forEach((epic, idx) => {{
-                const div = document.createElement('div');
-                div.className = 'epic-item';
-                div.innerHTML = `
-                    <div style=""display: flex; justify-content: space-between; margin-bottom: 8px;"">
-                        <strong>Epic ${{idx + 1}}: <input type=""text"" style=""width: 80%;"" value=""${{epic.title || ''}}"" onchange=""updateEpicTitle(${{idx}}, this.value)"" /></strong>
+            reqs.forEach((req, idx) => {{
+                const acText = Array.isArray(req.acceptanceCriteria) ? req.acceptanceCriteria.join('\n') : (req.acceptanceCriteria || '');
+                const impacts = req.impacts || {{}};
+
+                const card = document.createElement('div');
+                card.className = 'req-card';
+                card.innerHTML = `
+                    <div class=""req-header"">
+                        <div style=""display: flex; align-items: center; gap: 8px; flex-grow: 1;"">
+                            <input type=""text"" class=""req-id-val"" style=""width: 100px; font-weight: bold; background: #1F4E78; color: white; border-radius: 4px; padding: 6px 10px; text-align: center;"" value=""${{escapeHtml(req.id || `REQ-${{String(idx + 1).padStart(3, '0')}}`)}}\"" placeholder=""REQ-001"" title=""Editable Requirement ID"" />
+                            <input type=""text"" class=""req-title-val"" style=""flex-grow: 1; font-weight: bold;"" value=""${{escapeHtml(req.title || '')}}\"" placeholder=""Requirement Title"" />
+                        </div>
+                        <div style=""display: flex; align-items: center; gap: 8px;"">
+                            <select class=""req-class-val"">
+                                <option value=""NEW"" ${{req.classification === 'NEW' ? 'selected' : ''}}>NEW</option>
+                                <option value=""CHANGE"" ${{req.classification === 'CHANGE' ? 'selected' : ''}}>CHANGE</option>
+                                <option value=""CONFLICT"" ${{req.classification === 'CONFLICT' ? 'selected' : ''}}>CONFLICT</option>
+                            </select>
+                            <button class=""btn btn-del"" onclick=""deleteRequirement(${{idx}})"">🗑️ Delete</button>
+                        </div>
                     </div>
-                    <textarea style=""min-height: 70px; margin-bottom: 8px;"" onchange=""updateEpicDesc(${{idx}}, this.value)"">${{epic.description || ''}}</textarea>
-                    <label style=""font-size: 12px; font-weight: bold; color: #4A5568;"">Acceptance Criteria (one per line):</label>
-                    <textarea style=""min-height: 80px;"" onchange=""updateEpicAc(${{idx}}, this.value)"">${{(epic.acceptanceCriteria || []).join('\n')}}</textarea>
+
+                    <div class=""field-group"">
+                        <label>Desired Behavior / Description:</label>
+                        <textarea class=""req-behavior-val"" style=""min-height: 80px;"" placeholder=""Detailed functional requirement and expected system behavior..."">${{escapeHtml(req.desiredBehavior || '')}}</textarea>
+                    </div>
+
+                    <div class=""field-group"">
+                        <label>Transcript Quote / Source Meeting Evidence:</label>
+                        <input type=""text"" class=""req-source-val"" style=""width: 100%;"" value=""${{escapeHtml(req.sourceMeeting || '')}}\"" placeholder=""Quote or discussion timestamp reference"" />
+                    </div>
+
+                    <div class=""field-group"">
+                        <label>Existing System Impact & Database Comparison:</label>
+                        <textarea class=""req-comparison-val"" style=""min-height: 60px;"" placeholder=""How does this impact existing DB schema, SPs, or API architecture?"">${{escapeHtml(req.existingSystemComparison || '')}}</textarea>
+                    </div>
+
+                    <div class=""field-group"">
+                        <label>Acceptance Criteria (one per line):</label>
+                        <textarea class=""req-ac-val"" style=""min-height: 75px;"" placeholder=""User can view invoice details...&#10;System validates tax ID before saving..."">${{escapeHtml(acText)}}</textarea>
+                    </div>
+
+                    <div class=""field-group"">
+                        <label>Component Impacts Breakdown:</label>
+                        <div class=""impact-grid"">
+                            <div>
+                                <label style=""font-size: 11px;"">Database (Tables, Columns, SPs):</label>
+                                <textarea class=""req-db-val"" style=""min-height: 65px; font-size: 13px;"" placeholder=""Impacted tables, columns, SPs..."">${{escapeHtml(impacts.database || '')}}</textarea>
+                            </div>
+                            <div>
+                                <label style=""font-size: 11px;"">Backend (APIs, Controllers, Services):</label>
+                                <textarea class=""req-backend-val"" style=""min-height: 65px; font-size: 13px;"" placeholder=""Impacted controllers, services, APIs..."">${{escapeHtml(impacts.backend || '')}}</textarea>
+                            </div>
+                            <div>
+                                <label style=""font-size: 11px;"">Frontend (Pages, UI Components):</label>
+                                <textarea class=""req-frontend-val"" style=""min-height: 65px; font-size: 13px;"" placeholder=""Impacted pages, forms, UI components..."">${{escapeHtml(impacts.frontend || '')}}</textarea>
+                            </div>
+                            <div>
+                                <label style=""font-size: 11px;"">Mobile API / Compatibility:</label>
+                                <textarea class=""req-mobile-val"" style=""min-height: 65px; font-size: 13px;"" placeholder=""Mobile API compatibility notes..."">${{escapeHtml(impacts.mobile || '')}}</textarea>
+                            </div>
+                        </div>
+                    </div>
                 `;
-                container.appendChild(div);
+                container.appendChild(card);
             }});
         }}
 
-        function updateEpicTitle(idx, val) {{ currentPayload.epics[idx].title = val; }}
-        function updateEpicDesc(idx, val) {{ currentPayload.epics[idx].description = val; }}
-        function updateEpicAc(idx, val) {{ currentPayload.epics[idx].acceptanceCriteria = val.split('\n').filter(x => x.trim().length > 0); }}
+        function addRequirement() {{
+            collectPayload(); // Preserve any in-flight edits across existing cards
+            const newIndex = (currentPayload.requirements || []).length + 1;
+            const newReq = {{
+                id: `REQ-${{String(newIndex).padStart(3, '0')}}`,
+                title: ""New Functional Requirement"",
+                desiredBehavior: """",
+                sourceMeeting: """",
+                classification: ""NEW"",
+                existingSystemComparison: """",
+                acceptanceCriteria: [],
+                impacts: {{ database: """", backend: """", frontend: """", mobile: """" }}
+            }};
+            currentPayload.requirements.push(newReq);
+            renderRequirements();
+            showToast(""Added new requirement card."");
+        }}
+
+        function deleteRequirement(idx) {{
+            collectPayload(); // Preserve current edits
+            const reqId = currentPayload.requirements[idx]?.id || `#${{idx + 1}}`;
+            if (!confirm(`Are you sure you want to delete requirement ${{reqId}}?`)) return;
+            currentPayload.requirements.splice(idx, 1);
+            renderRequirements();
+            showToast(""Requirement deleted."");
+        }}
 
         function collectPayload() {{
-            currentPayload.executiveSummary = document.getElementById('execSummary').value;
             currentPayload.project = document.getElementById('projectSelect').value;
-            try {{
-                currentPayload.databaseMapping = JSON.parse(document.getElementById('dbMappings').value);
-            }} catch(e) {{}}
-            currentPayload.nonFunctionalRequirements = document.getElementById('nfrSummary').value.split('\n').filter(x => x.trim().length > 0);
+            currentPayload.meetingTitle = document.getElementById('meetingTitleInput').value;
+            currentPayload.executiveSummary = document.getElementById('execSummary').value;
+
+            // Open questions
+            currentPayload.openQuestions = document.getElementById('openQuestions').value
+                .split('\n')
+                .map(x => x.trim())
+                .filter(x => x.length > 0);
+
+            // Assumptions
+            currentPayload.assumptions = document.getElementById('assumptions').value
+                .split('\n')
+                .map(x => x.trim())
+                .filter(x => x.length > 0);
+
+            // Direct extraction from DOM for all requirement cards
+            const cards = document.querySelectorAll('.req-card');
+            const gatheredReqs = [];
+            cards.forEach((card, i) => {{
+                const idInput = card.querySelector('.req-id-val');
+                const titleInput = card.querySelector('.req-title-val');
+                const classSelect = card.querySelector('.req-class-val');
+                const behaviorInput = card.querySelector('.req-behavior-val');
+                const sourceInput = card.querySelector('.req-source-val');
+                const compInput = card.querySelector('.req-comparison-val');
+                const acInput = card.querySelector('.req-ac-val');
+                const dbInput = card.querySelector('.req-db-val');
+                const backInput = card.querySelector('.req-backend-val');
+                const frontInput = card.querySelector('.req-frontend-val');
+                const mobInput = card.querySelector('.req-mobile-val');
+
+                gatheredReqs.push({{
+                    id: (idInput && idInput.value.trim()) ? idInput.value.trim() : `REQ-${{String(i+1).padStart(3, '0')}}`,
+                    title: titleInput ? titleInput.value : '',
+                    classification: classSelect ? classSelect.value : 'NEW',
+                    desiredBehavior: behaviorInput ? behaviorInput.value : '',
+                    sourceMeeting: sourceInput ? sourceInput.value : '',
+                    existingSystemComparison: compInput ? compInput.value : '',
+                    acceptanceCriteria: acInput ? acInput.value.split('\n').map(x => x.trim()).filter(x => x.length > 0) : [],
+                    impacts: {{
+                        database: dbInput ? dbInput.value : '',
+                        backend: backInput ? backInput.value : '',
+                        frontend: frontInput ? frontInput.value : '',
+                        mobile: mobInput ? mobInput.value : ''
+                    }}
+                }});
+            }});
+            currentPayload.requirements = gatheredReqs;
+
             return currentPayload;
         }}
 
         async function saveDraft() {{
             showToast(""Saving draft updates..."");
             const payload = collectPayload();
-            const approver = document.getElementById('reviewerInput').value;
+            const approver = document.getElementById('reviewerInput').value || ""Lead Reviewer"";
 
-            const res = await fetch('/api/srs/save-draft', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ draftId: draftId, approverName: approver, srsPayload: payload }})
-            }});
-            if (res.ok) {{
-                showToast(""✅ Draft successfully saved!"");
-            }} else {{
-                showToast(""❌ Error saving draft."");
+            try {{
+                const res = await fetch('/api/srs/save-draft', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ draftId: draftId, approverName: approver, srsPayload: payload }})
+                }});
+                const data = await res.json();
+                if (res.ok) {{
+                    showToast(""✅ Draft & Word (.docx) successfully updated!"");
+                }} else {{
+                    showToast(""❌ Error saving draft: "" + (data.error || ""Server error""));
+                }}
+            }} catch(err) {{
+                showToast(""❌ Network error: "" + err.message);
             }}
         }}
 
@@ -602,27 +872,41 @@ namespace SrsAi.Functions
             if (!confirm(""Are you sure you want to officially approve and finalize this SRS document?"")) return;
             showToast(""Promoting to srs-approved and dispatching emails..."");
             const payload = collectPayload();
-            const approver = document.getElementById('reviewerInput').value;
+            const approver = document.getElementById('reviewerInput').value || ""Lead Reviewer"";
 
-            const res = await fetch('/api/srs/save-approve', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ draftId: draftId, project: payload.project, approverName: approver, srsPayload: payload }})
-            }});
-            const data = await res.json();
-            if (res.ok) {{
-                alert(""🎉 SRS Approved Successfully! Confirmation emails have been dispatched."");
-                window.location.reload();
-            }} else {{
-                alert(""Error approving document: "" + (data.error || ""Unknown error""));
+            try {{
+                const res = await fetch('/api/srs/save-approve', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ draftId: draftId, project: payload.project, approverName: approver, srsPayload: payload }})
+                }});
+                const data = await res.json();
+                if (res.ok) {{
+                    alert(""🎉 SRS Approved Successfully!\n\nThe finalized Word (.docx) document has been promoted to 'srs-approved' and confirmation emails have been dispatched."");
+                    window.location.reload();
+                }} else {{
+                    alert(""Error approving document: "" + (data.error || ""Unknown error""));
+                }}
+            }} catch(err) {{
+                alert(""Network error: "" + err.message);
             }}
+        }}
+
+        function escapeHtml(str) {{
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/""/g, '&quot;')
+                .replace(/'/g, '&#039;');
         }}
 
         function showToast(msg) {{
             const t = document.getElementById('toast');
             t.innerText = msg;
             t.style.display = 'block';
-            setTimeout(() => {{ t.style.display = 'none'; }}, 3000);
+            setTimeout(() => {{ t.style.display = 'none'; }}, 3500);
         }}
 
         init();

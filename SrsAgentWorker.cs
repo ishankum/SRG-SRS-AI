@@ -215,6 +215,7 @@ namespace SrsAi.Functions
         {{
           ""project"": ""Extracted Project Name"",
           ""meetingTitle"": ""Meeting Title"",
+          ""executiveSummary"": ""Comprehensive overview of the business problem, goals, and solution discussed."",
           ""requirements"": [
             {{
               ""id"": ""REQ-001"",
